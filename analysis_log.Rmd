@@ -1,0 +1,44 @@
+Analysis log
+========================================================
+
+### 2015.10.13
+
+* Installed `jsonlite` and `knitr` packages
+
+```{r}
+setwd('/Users/hanalee/yelp_challenge')
+library(jsonlite)
+```
+
+### 2015.10.17
+
+* Load data and cache for loading
+```{r}
+business <- stream_in(file("dataset/yelp_academic_dataset_business.json"))
+checkin <- stream_in(file("dataset/yelp_academic_dataset_checkin.json"))
+review <- stream_in(file("dataset/yelp_academic_dataset_review.json"))
+tip <- stream_in(file("dataset/yelp_academic_dataset_tip.json"))
+user <- stream_in(file("dataset/yelp_academic_dataset_user.json"))
+yelp_data <- save(business, checkin, review, tip, user,
+                  file="yelp_data.rda")
+```
+* Exploratory data analysis for quiz 1
+```{r}
+nrow(review)
+review[100,]
+colnames(review)
+length(which(review$stars==5))/nrow(review)
+
+nrow(business)
+colnames(business)
+colnames(business$attributes)
+length(which(business$attributes[,"Wi-Fi"] == "free"))/sum(!(is.na(business$attributes[,"Wi-Fi"])))
+
+nrow(tip)
+tip[1000,]
+
+colnames(user)
+colnames(user$votes)
+intersect(c("Ira","Brian","Jeff","Roger"), user[which(user$votes[,"funny"] > 10000), "name"])
+by(user, as.factor(user$votes[,"funny"] > 1), FUN=sum)
+```
