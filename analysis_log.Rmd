@@ -1,7 +1,7 @@
 Analysis log
 ========================================================
 
-### 2015.10.13
+### Loading data
 
 * Installed `jsonlite` and `knitr` packages
 
@@ -10,7 +10,7 @@ setwd('/Users/hanalee/yelp_challenge')
 library(jsonlite)
 ```
 
-### 2015.10.17
+### Quiz questions
 
 Load data and cache for loading
 ```{r}
@@ -44,7 +44,7 @@ intersect(c("Ira","Brian","Jeff","Roger"), user[which(user$votes[,"funny"] > 100
 fisher.test(table(user$votes[,"funny"] > 1, user$fans > 1))
 ```
 
-### 2015.10.23
+### Brainstorming
 
 ```{r}
 load("yelp_data.rda")
@@ -119,4 +119,88 @@ business$metro <- sapply(business$city, function(x){
     return("Edinburgh")
   } else { return(NA)}
 })
+```
+
+### 
+Check for missing data in: 
+  - name
+  - longitude
+  - latitude
+  - state
+  - stars
+  - review_count
+  - open
+
+```{r}
+colnames(business)
+colSums(is.na(business[,c("name", "longitude","latitude", "state", "stars","review_count", "open")]))
+```
+
+Expand out:
+  - hours
+  - categories
+  - attributes 
+  - neighborhoods - character(0) needs to be NA
+
+```{r}
+head(business$categories, 5)
+colnames(business$attributes)
+colnames(business$hours)
+head(business$neighborhoods, 5)
+
+attribute_classes <- sapply(colnames(business$attributes), function(x){ class(business$attributes[,x]) })
+attributes <- as.data.frame(business$attributes[, which(attribute_classes == "logical")])
+attributes$`Alcohol` <- as.factor(business$attributes$`Alcohol`)
+attributes$`Noise Level` <- as.factor(business$attributes$`Noise Level`)
+attributes$`Attire` <- as.factor(business$attributes$`Attire`)
+attributes$`Wi-Fi` <- as.factor(business$attributes$`Wi-Fi`)
+attributes$`Ages Allowed` <- as.factor(business$attributes$`Ages Allowed`)
+attributes$`BYOB/Corkage` <- as.factor(business$attributes$`BYOB/Corkage`)
+
+which(attribute_classes == "data.frame")
+sapply(colnames(business$attributes$`Ambience`), function(x){ class(business$attributes$`Ambience`[,x]) })
+sapply(colnames(business$attributes$`Good For`), function(x){ class(business$attributes$`Good For`[,x]) })
+sapply(colnames(business$attributes$`Music`), function(x){ class(business$attributes$`Music`[,x]) })
+sapply(colnames(business$attributes$`Hair Types Specialized In`), function(x){ class(business$attributes$`Hair Types Specialized In`[,x]) })
+sapply(colnames(business$attributes$`Payment Types`), function(x){ class(business$attributes$`Payment Types`[,x]) })
+sapply(colnames(business$attributes$`Parking`), function(x){ class(business$attributes$`Parking`[,x]) })
+sapply(colnames(business$attributes$`Dietary Restrictions`), function(x){ class(business$attributes$`Dietary Restrictions`[,x]) })
+
+ambience <- as.data.frame(business$attributes$`Ambience`)
+good_for <- as.data.frame(business$attributes$`Good For`)
+music <- as.data.frame(business$attributes$`Music`)
+hair_types <- as.data.frame(business$attributes$`Hair Types Specialized In`)
+payment <- as.data.frame(business$attributes$`Payment Types`)
+parking <- as.data.frame(business$attributes$`Parking`)
+dietary <- as.data.frame(business$attributes$`Dietary Restrictions`)
+
+hours <- cbind(sapply(colnames(business$hours), function(x){
+    as.numeric(substr(business$hours[,x][,"open"], 1, 2))
+  }),
+  sapply(colnames(business$hours), function(x){
+    as.numeric(substr(business$hours[,x][,"close"], 1, 2))
+  })
+)
+colnames(hours) <- paste(rep(colnames(business$hours), each=2), c("open","close"), sep='_')
+head(hours)
+
+
+```
+
+Note that review count does not equal total number of reviews, but total number of users who left reviews.
+```{r}
+check <- head(business[,c("business_id", "review_count")],5)
+colnames(review)
+length(which(review$business_id == check$business_id[1]))
+review[which(review$business_id == check$business_id[1]),"user_id"]
+```
+
+Add in:
+  - number of tips
+  - number of checkins
+  - number of repeat reviews
+  - number of repeat checkins
+  - number of repeat tips
+```{r}
+
 ```
