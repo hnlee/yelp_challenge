@@ -90,8 +90,6 @@ length(setdiff(tip$business_id, business$business_id))
 length(setdiff(review$business_id, business$business_id))
 ```
 
-### 2015.10.25
-
 Need to avoid circularity where what is being predicted is also in the predictors.
 
 Use external data set to determine what to predict?
@@ -121,7 +119,8 @@ business$metro <- sapply(business$city, function(x){
 })
 ```
 
-### 
+### Data cleaning
+
 Check for missing data in: 
   - name
   - longitude
@@ -133,13 +132,15 @@ Check for missing data in:
 
 ```{r}
 colnames(business)
-colSums(is.na(business[,c("name", "longitude","latitude", "state", "stars","review_count", "open")]))
+business_meta <- c("name", "longitude","latitude", "state", "stars","review_count", "open")
+colSums(is.na(business[, business_meta]))
+business_flat <- business[, business_meta]
 ```
 
 Expand out:
-  - hours
+  - hours X
   - categories
-  - attributes 
+  - attributes X
   - neighborhoods - character(0) needs to be NA
 
 ```{r}
@@ -147,15 +148,28 @@ head(business$categories, 5)
 colnames(business$attributes)
 colnames(business$hours)
 head(business$neighborhoods, 5)
+```
 
+Cleaning up attributes
+```{r}
 attribute_classes <- sapply(colnames(business$attributes), function(x){ class(business$attributes[,x]) })
 attributes <- as.data.frame(business$attributes[, which(attribute_classes == "logical")])
+
+which(attribute_classes == "character")
 attributes$`Alcohol` <- as.factor(business$attributes$`Alcohol`)
 attributes$`Noise Level` <- as.factor(business$attributes$`Noise Level`)
 attributes$`Attire` <- as.factor(business$attributes$`Attire`)
+attributes$`Smoking` <- as.factor(business$attributes$`Smoking`)
 attributes$`Wi-Fi` <- as.factor(business$attributes$`Wi-Fi`)
 attributes$`Ages Allowed` <- as.factor(business$attributes$`Ages Allowed`)
 attributes$`BYOB/Corkage` <- as.factor(business$attributes$`BYOB/Corkage`)
+
+which(attribute_classes == "list")
+attributes$`Accepts Credit Cards` <- sapply(business$attributes$`Accepts Credit Cards`, function(x){
+  if(length(x) == 0) { return(NA) } else { return(x[1]) }
+})
+
+head(attributes, 5)
 
 which(attribute_classes == "data.frame")
 sapply(colnames(business$attributes$`Ambience`), function(x){ class(business$attributes$`Ambience`[,x]) })
@@ -174,6 +188,10 @@ payment <- as.data.frame(business$attributes$`Payment Types`)
 parking <- as.data.frame(business$attributes$`Parking`)
 dietary <- as.data.frame(business$attributes$`Dietary Restrictions`)
 
+```
+
+Cleaning up hours
+```{r}
 hours <- cbind(sapply(colnames(business$hours), function(x){
     as.numeric(substr(business$hours[,x][,"open"], 1, 2))
   }),
@@ -182,25 +200,136 @@ hours <- cbind(sapply(colnames(business$hours), function(x){
   })
 )
 colnames(hours) <- paste(rep(colnames(business$hours), each=2), c("open","close"), sep='_')
+hours <- as.data.frame(hours)
 head(hours)
-
-
 ```
+
+Cleaning up categories - only use top-level categories from Yelp
+```{r}
+top_level <- c("Active Life", "Arts & Entertainment", "Automotive", "Beauty & Spas", "Education",
+  "Event Planning & Services", "Financial Services", "Food", "Health & Medical", "Home Services",
+  "Hotels & Travel", "Local Flavor", "Local Services", "Mass Media", "Nightlife", "Pets", 
+  "Professional Services", "Public Services & Government", "Real Estate", "Religious Organizations",
+  "Restaurants", "Shopping")
+sum(sapply(business$categories, function(x) { length(intersect(top_level, x)) != 1 & length(x) != 0 }))
+categories <- as.data.frame(cbind(sapply(top_level, function(x) {
+  sapply(business$categories, function(y) {
+    x %in% y
+  })
+})))
+```
+
+Ignoring neighborhoods for now -- may later use along with clustering of longitude and latitude
 
 Note that review count does not equal total number of reviews, but total number of users who left reviews.
 ```{r}
 check <- head(business[,c("business_id", "review_count")],5)
 colnames(review)
 length(which(review$business_id == check$business_id[1]))
-review[which(review$business_id == check$business_id[1]),"user_id"]
+review[which(review$business_id == check$business_id[1]), "user_id"]
+total_review <- sapply(business$business_id, function(x) {
+  length(which(review$business_id == x))
+})
 ```
 
-Add in:
+Add in features:
   - number of tips
   - number of checkins
   - number of repeat reviews
   - number of repeat checkins
   - number of repeat tips
 ```{r}
-
+total_tip <- sapply(business$business_id, function(x) {
+  length(which(tip$business_id == x))
+})
+total_checkin <- sapply(business$business_id, function(x) {
+  length(which(checkin$business_id == x))
+})
+repeat_review <- sapply(business$business_id, function(x) {
+  review_number <- table(review[which(review$business_id == x), "user_id"])
+  return(length(which(review_number > 1)))
+})
+repeat_tip <- sapply(business$business_id, function(x) {
+  tip_number <- table(tip[which(tip$business_id == x), "user_id"])
+  return(length(which(tip_number > 1)))
+})
+repeat_checkin <- sapply(business$business_id, function(x) {
+  checkin_number <- table(checkin[which(checkin$business_id == x), "user_id"])
+  return(length(which(checkin_number > 1)))
+})
 ```
+
+What to predict:
+  - stars
+  - number of reviews (total or unique?)
+  - total of reviews, checkins, tips?
+```{r}
+mean_stars <- sapply(business$business_id, function(x) {
+  return(mean(review[which(review$business_id == x), "stars"]))
+})
+
+total_rct <- rowSums(cbind(total_review, total_tip,  total_checkin))
+```
+
+Note that stars is actually ordered categorical (steps of 0.5) -- create a star average to predict?
+```{r}
+ggplot(data=as.data.frame(business[,c("business_id", "stars")])) + geom_histogram(aes(x=stars), binwidth=0.5)
+```
+
+Saving everything to reload easily
+```{r}
+save(business_flat,
+  attributes,
+  ambience,
+  good_for,
+  music,
+  parking,
+  hair_types,
+  payment,
+  parking,
+  dietary,
+  hours,
+  categories,
+  total_review,
+  total_tip,
+  total_checkin,
+  repeat_review,
+  repeat_tip,
+  repeat_checkin,
+  mean_stars,
+  total_rct, file="yelp_clean.rda")
+business_data <- as.data.frame(cbind(business_flat,
+  attributes,
+  ambience,
+  good_for,
+  music,
+  parking,
+  hair_types,
+  payment,
+  parking,
+  dietary,
+  hours,
+  categories,
+  total_review,
+  total_tip,
+  total_checkin,
+  repeat_review,
+  repeat_tip,
+  repeat_checkin,
+  mean_stars,
+  total_rct))
+save(business_data, file="yelp_tidy.rda")
+```
+
+### Data partitioning
+
+70-30 split into training and test data
+
+```{r}
+train_index <- createDataPartition(business$stars, p=0.7, groups=9, list=FALSE)
+train <- business_data[train_index,]
+test <- business_data[-train_index,]
+save(train, file="yelp_train.rda")
+save(test, file="yelp_test.rda")
+```
+
