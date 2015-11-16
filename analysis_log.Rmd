@@ -50,7 +50,6 @@ fisher.test(table(user$votes[,"funny"] > 1, user$fans > 1))
 load("yelp_data.rda")
 library(dplyr)
 library(reshape2)
-library(caret)
 ```
 
 I'm interested in urban planning aspects of the data set. Possible  questions for the project:
@@ -132,9 +131,9 @@ Check for missing data in:
 
 ```{r}
 colnames(business)
-business_meta <- c("name", "longitude","latitude", "state", "stars","review_count", "open")
-colSums(is.na(business[, business_meta]))
+business_meta <- c("business_id", "name", "longitude","latitude", "state", "stars","review_count", "open")
 business_flat <- business[, business_meta]
+colSums(is.na(business[, business_meta]))
 ```
 
 Expand out:
@@ -264,17 +263,17 @@ What to predict:
   - number of reviews (total or unique?)
   - total of reviews, checkins, tips?
 ```{r}
-mean_stars <- sapply(business$business_id, function(x) {
-  return(mean(review[which(review$business_id == x), "stars"]))
-})
-
 total_rct <- rowSums(cbind(total_review, total_tip,  total_checkin))
 ```
 
 Note that stars is actually ordered categorical (steps of 0.5) -- create a star average to predict?
 ```{r}
 ggplot(data=as.data.frame(business[,c("business_id", "stars")])) + geom_histogram(aes(x=stars), binwidth=0.5)
+mean_stars <- sapply(business$business_id, function(x) {
+  return(mean(review[which(review$business_id == x), "stars"], na.rm=TRUE))
+})
 ```
+Only problem is that review data set is not all reviews are in data set...
 
 Saving everything to reload easily
 ```{r}
@@ -319,6 +318,8 @@ business_data <- as.data.frame(cbind(business_flat,
   mean_stars,
   total_rct))
 save(business_data, file="yelp_tidy.rda")
+load("yelp_clean.rda")
+load("yelp_tidy.rda")
 ```
 
 ### Data partitioning
@@ -333,3 +334,113 @@ save(train, file="yelp_train.rda")
 save(test, file="yelp_test.rda")
 ```
 
+Supervised learning on training data
+
+```{r}
+load("yelp_train.rda")
+library(caret)
+library(ggplot2)
+```
+
+Check for missing values
+Check for near zero variance
+
+```{r}
+colnames(train)
+nonpredictors <- c("business_id", "name", "stars", "mean_stars",
+                   "total_review", "total_rct", "state")
+colSums(is.na(train[,nonpredictors]))
+predictors <- setdiff(colnames(train), nonpredictors)
+missing <- colSums(is.na(train[,predictors]))/nrow(train)
+ggplot(data = data.frame(cbind(numNA = missing))) + geom_histogram(aes(x = numNA), binwidth=0.05)
+filtered_predictors <- predictors[which(missing <= 0.65)]
+missing[filtered_predictors]
+
+nzv <- nearZeroVar(train[, filtered_predictors], saveMetrics = TRUE)
+which(nzv$nzv)
+filtered_predictors <- filtered_predictors[-which(nzv$nzv)]
+filtered_predictors
+```
+
+
+Check for highly correlated predictors
+
+```{r}
+corr_matrix <- cor(as.data.frame(train[, filtered_predictors]), use="pairwise.complete.obs")
+correlated_predictors <- findCorrelation(corr_matrix, verbose=TRUE, exact=TRUE)
+filtered_predictors[correlated_predictors]
+filtered_predictors <- filtered_predictors[-correlated_predictors]
+```
+
+Plot correlations with outcome for continuous
+wilcoxon-test for binary/ANOVA for multiple categories
+
+```{r}
+variable_types <- sapply(filtered_predictors, function(x) {
+  class(train[, x])
+})
+outcome_corr <- sapply(filtered_predictors[which(variable_types == "numeric" | variable_types=="integer")], function(x) {
+  cor(train$stars, train[, x], use="complete.obs")
+})
+outcome_corr
+
+outcome_wilcox <- sapply(filtered_predictors[which(variable_types == "logical")], function(x){
+  true_val <- which(!is.na(train[, x]) & train[, x])
+  false_val <- which(!is.na(train[, x]) & !train[, x])
+  return(-log(wilcox.test(train[true_val, "stars"], train[-false_val, "stars"])$p.value))
+})
+outcome_wilcox
+```
+
+Running models
+
+```{r}
+install.packages("randomForest")
+install.packages("gbm")
+install.packages("xgboost")
+install.packages("kernlab")
+library(randomForest)
+library(gbm)
+library(xgboost)
+library(kernlab)
+set.seed(333)
+```
+
+Setting up cross-validation for predictor choice
+```{r}
+control <- trainControl(method="repeatedcv", number=5, repeats=5)
+```
+
+Trying random forests
+```{r}
+m <- floor(length(filtered_predictors)/3)
+rf_tuning <- data.frame(mtry = 1:m)
+rf_fit <- train(stars ~ ., data=train[,c(filtered_predictors, "stars")],
+                method="rf",
+                trControl=control,
+                verbose=TRUE,
+                tuneGrid=rf_tuning,
+                importance=TRUE)
+ggplot(rf_fit)
+rf_fit
+varImp(rf_fit)
+```
+
+Notes:
+- optimal mtry=three
+- feature importance: 
+
+
+
+Trying gradient boosting
+Hastie says performance usually does not improve past J ~ 6
+```{r}
+gbm_tuning <-  expand.grid(interaction.depth = 1:5,
+                           n.trees = c(10,50,100,500,1000,5000))
+gbm_fit <- train(stars ~ ., data=train[,c(filtered_predictors, "stars")],
+                method="gbm",
+                trControl=control,
+                verbose=TRUE,
+                tuneGrid=gbm_tuning,
+                importance=TRUE)
+```
