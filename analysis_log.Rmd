@@ -357,6 +357,7 @@ filtered_predictors <- predictors[which(missing <= 0.65)]
 missing[filtered_predictors]
 
 nzv <- nearZeroVar(train[, filtered_predictors], saveMetrics = TRUE)
+nzv
 which(nzv$nzv)
 filtered_predictors <- filtered_predictors[-which(nzv$nzv)]
 filtered_predictors
@@ -421,15 +422,24 @@ rf_fit <- train(stars ~ ., data=train[,c(filtered_predictors, "stars")],
                 verbose=TRUE,
                 tuneGrid=rf_tuning,
                 importance=TRUE)
-ggplot(rf_fit)
+mtry_tuning <- ggplot(rf_fit)
+mtry_tuning
 rf_fit
-varImp(rf_fit)
+rf_imp <- varImp(rf_fit)
+plot(rf_imp)
 ```
 
 Notes:
 - optimal mtry=three
 - feature importance: 
 
+Performance on test data:
+```{r}
+load("yelp_test.rda")
+rf_predict <- predict(rf_fit, newdata=test[, filtered_predictors])
+rf_fit$call
+rf_fit_plot <- ggplot(data=data.frame(cbind(prediction=rf_predict, actual=test$stars))) + geom_point(aes(x=prediction, y=actual))
+```
 
 
 Trying gradient boosting
@@ -443,4 +453,8 @@ gbm_fit <- train(stars ~ ., data=train[,c(filtered_predictors, "stars")],
                 verbose=TRUE,
                 tuneGrid=gbm_tuning,
                 importance=TRUE)
+param_tuning <- ggplot(gbm_fit)
+gbm_fit
+gbm_imp <- varImp(gbm_fit)
+ggplot(gbm_imp)
 ```
